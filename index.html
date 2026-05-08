@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>口算大冒险 · 自动跳转完整版</title>
+    <title>口算大冒险 · 可开关自动跳转</title>
     <style>
         :root {
             --primary: #4A90D9;
@@ -48,6 +48,25 @@
         .opt-btn { padding:7px 14px; border-radius:22px; border:2px solid var(--border); background:#fff; font-weight:600; cursor:pointer; font-size:0.82rem; color:#666; }
         .opt-btn.active { border-color: var(--warning); background:#fffdf5; color:#d68910; }
         .adventure-info { margin:10px 0; padding:10px 14px; background:#fef9e7; border-radius:14px; text-align:center; font-size:0.85rem; color:#b7950b; }
+
+        .auto-toggle {
+            display: flex; align-items: center; justify-content: space-between;
+            background: #f6f8fa; padding: 12px 16px; border-radius: 16px; margin: 16px 0;
+        }
+        .auto-toggle span { font-weight: 600; font-size: 0.9rem; }
+        .toggle-switch { position: relative; width: 52px; height: 28px; }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .slider {
+            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #ccc; transition: .3s; border-radius: 34px;
+        }
+        .slider:before {
+            position: absolute; content: ""; height: 22px; width: 22px;
+            left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%;
+        }
+        input:checked + .slider { background-color: #4A90D9; }
+        input:checked + .slider:before { transform: translateX(24px); }
+
         .entry-buttons { display: flex; gap: 12px; margin: 20px 0; }
         .entry-btn { flex:1; padding: 14px 10px; border-radius: 30px; font-weight: 700; font-size: 0.85rem; border: none; cursor: pointer; background: #f0f2f5; color: #666; display: flex; align-items: center; justify-content: center; gap: 6px; }
         .entry-btn.wrong { background: #fff0e0; border: 2px solid #f0c78e; color: #b87333; }
@@ -93,6 +112,7 @@
 </head>
 <body>
 <div class="container" id="app">
+    <!-- 首页 -->
     <div class="view active" id="homeView">
         <div class="title-area"><span class="icon">🧮</span><h1>口算大冒险</h1><div class="sub">三年级 · 智能学习版</div></div>
         <div class="mode-switch">
@@ -124,6 +144,16 @@
             </div>
         </div>
         <div id="adventureInfo" class="adventure-info" style="display:none;">🗺️ 6关冒险，正确率80%晋级</div>
+
+        <!-- ★ 新增自动跳转开关 -->
+        <div class="auto-toggle">
+            <span>⚡ 输入正确答案自动跳转</span>
+            <label class="toggle-switch">
+                <input type="checkbox" id="autoJumpToggle">
+                <span class="slider"></span>
+            </label>
+        </div>
+
         <div class="entry-buttons">
             <button class="entry-btn wrong" id="btnWrongBook">📕 错题本</button>
             <button class="entry-btn weak" id="btnWeakAttack">🎯 弱点攻破</button>
@@ -131,6 +161,7 @@
         <button class="start-btn" id="btnStart">🚀 开始练习</button>
     </div>
 
+    <!-- 练习页 -->
     <div class="view" id="practiceView">
         <div class="practice-inner">
             <div class="header-bar">
@@ -164,6 +195,7 @@
         </div>
     </div>
 
+    <!-- 结果页 -->
     <div class="view" id="resultView">
         <div class="result-header">
             <div class="result-emoji" id="resultEmoji">🎉</div>
@@ -184,6 +216,7 @@
         <button class="btn-back" id="btnBackHome">🏠 返回主页</button>
     </div>
 
+    <!-- 错题本页 -->
     <div class="view" id="wrongBookView">
         <h2 style="margin-bottom:16px;">📕 错题本</h2>
         <div id="wrongTypeList"></div>
@@ -209,8 +242,15 @@
         function rand(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
 
         const STORAGE_KEY = 'math_adventure_data';
+        const AUTO_JUMP_KEY = 'math_auto_jump';
+
+        // 加载数据
         function loadData() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || { wrongBook:{}, typeStats:{}, adventureLevel:0 }; } catch(e) { return { wrongBook:{}, typeStats:{}, adventureLevel:0 }; } }
         function saveData(data) { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+
+        // 自动跳转设置存储
+        function loadAutoJump() { return localStorage.getItem(AUTO_JUMP_KEY) !== 'false'; } // 默认开启
+        function saveAutoJump(val) { localStorage.setItem(AUTO_JUMP_KEY, val); }
 
         function addWrongRecord(typeId, question, correctAns, userAns, timeSpent) {
             const data = loadData();
@@ -259,12 +299,21 @@
         let questions = [], currentIdx = 0, correctCount = 0, wrongCount = 0;
         let totalTime = 0, timerInterval = null, questionStart = 0, answered = false;
         let starsInLevel = 0, isPaused = false, currentRoundResults = [];
+        let autoJumpEnabled = loadAutoJump(); // 全局自动跳转开关
 
         const $ = id => document.getElementById(id);
         const views = { home: $('homeView'), practice: $('practiceView'), result: $('resultView'), wrongBook: $('wrongBookView') };
         function showView(view) { Object.values(views).forEach(v => v.classList.remove('active')); view.classList.add('active'); }
 
         function initHome() {
+            // 自动跳转开关UI
+            const toggle = $('autoJumpToggle');
+            toggle.checked = autoJumpEnabled;
+            toggle.addEventListener('change', function() {
+                autoJumpEnabled = this.checked;
+                saveAutoJump(this.checked);
+            });
+
             document.querySelectorAll('.mode-btn').forEach(b => b.addEventListener('click', function() {
                 document.querySelectorAll('.mode-btn').forEach(x => x.classList.remove('active'));
                 this.classList.add('active');
@@ -370,11 +419,18 @@
             answered = false; isPaused = false;
             const q = questions[currentIdx];
             $('questionText').textContent = q.text; $('questionTypeTag').textContent = q.typeName;
-            $('answerInput').value = ''; $('answerInput').disabled = false; $('answerInput').className = 'answer-input';
-            $('btnSubmit').disabled = false; $('questionCard').className = 'question-card';
+            const input = $('answerInput');
+            input.value = '';
+            input.disabled = false;
+            input.className = 'answer-input';
+            $('btnSubmit').disabled = false;
+            $('questionCard').className = 'question-card';
             $('ringFg').style.strokeDashoffset = '0'; $('ringFg').style.stroke = '#27AE60';
-            $('timerNum').textContent = timerSec; updatePracticeStats();
-            startTimer(); questionStart = Date.now(); $('answerInput').focus();
+            $('timerNum').textContent = timerSec;
+            updatePracticeStats();
+            startTimer();
+            questionStart = Date.now();
+            setTimeout(() => { input.focus(); }, 50);
         }
 
         function startTimer() {
@@ -403,7 +459,6 @@
             setTimeout(() => { currentIdx++; loadQuestion(); }, 1200);
         }
 
-        // ★ 手动确定按钮（备用）
         function submitAnswer() {
             if (answered || isPaused) return;
             const input = $('answerInput'); const val = parseInt(input.value.trim());
@@ -411,43 +466,47 @@
             processAnswer(val);
         }
 
-        // 统一处理答案（由自动检测或手动确定调用）
         function processAnswer(val) {
             if (answered) return;
-            answered = true; stopTimer();
+            answered = true;
+            stopTimer();
             const elapsed = (Date.now()-questionStart)/1000; const timeUsed = Math.min(elapsed, timerSec);
             totalTime += timeUsed;
             const q = questions[currentIdx]; const isCorrect = (val === q.ans);
+            const input = $('answerInput');
 
             if (isCorrect) {
                 correctCount++; if (mode==='adventure') starsInLevel++;
                 $('questionCard').className = 'question-card correct';
-                $('answerInput').className = 'answer-input correct';
+                input.className = 'answer-input correct';
                 updateTypeStats(q.typeId, true, timeUsed);
                 currentRoundResults.push({ typeId: q.typeId, correct: true, time: timeUsed });
+                $('btnSubmit').disabled = true;
+                updatePracticeStats();
+                setTimeout(() => {
+                    currentIdx++;
+                    loadQuestion();
+                }, 600);
             } else {
                 wrongCount++;
                 $('questionCard').className = 'question-card wrong';
-                $('answerInput').className = 'answer-input wrong';
+                input.className = 'answer-input wrong';
                 addWrongRecord(q.typeId, q.text, q.ans, val, timeUsed);
                 updateTypeStats(q.typeId, false, timeUsed);
                 currentRoundResults.push({ typeId: q.typeId, correct: false, time: timeUsed });
+                input.disabled = true;
+                $('btnSubmit').disabled = true;
+                updatePracticeStats();
+                setTimeout(() => {
+                    currentIdx++;
+                    loadQuestion();
+                }, 1000);
             }
-            $('answerInput').disabled = true;
-            $('btnSubmit').disabled = true;
-            updatePracticeStats();
-
-            // 跳转延迟：正确立即，错误稍慢
-            const delay = isCorrect ? 200 : 1000;
-            setTimeout(() => {
-                currentIdx++;
-                loadQuestion();
-            }, delay);
         }
 
-        // ★ 实时监测输入，正确答案自动触发
+        // ★ 实时输入检测，受开关控制
         $('answerInput').addEventListener('input', function() {
-            if (answered || isPaused) return;
+            if (!autoJumpEnabled || answered || isPaused) return; // 开关关闭或已作答则不触发
             const val = parseInt(this.value.trim());
             if (isNaN(val)) return;
             if (val === questions[currentIdx].ans) {
